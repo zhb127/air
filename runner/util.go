@@ -241,7 +241,6 @@ func adaptToVariousPlatforms(c *Config) {
 		if 0 < len(c.Build.FullBin) {
 
 			if !strings.HasSuffix(c.Build.FullBin, extName) {
-
 				c.Build.FullBin += extName
 			}
 			if !strings.HasPrefix(c.Build.FullBin, runName) {
@@ -284,7 +283,7 @@ type checksumMap struct {
 	m map[string]string
 }
 
-// update updates the filename with the given checksum if different.
+// updateFileChecksum updates the filename with the given checksum if different.
 func (a *checksumMap) updateFileChecksum(filename, newChecksum string) (ok bool) {
 	a.l.Lock()
 	defer a.l.Unlock()
