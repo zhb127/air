@@ -1,9 +1,9 @@
 package runner
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/pelletier/go-toml"
 )
 
@@ -34,7 +34,9 @@ type Config struct {
 }
 
 type cfgBuild struct {
+	PreCmd           []string      `toml:"pre_cmd"`
 	Cmd              string        `toml:"cmd"`
+	PostCmd          []string      `toml:"post_cmd"`
 	Bin              string        `toml:"bin"`
 	FullBin          string        `toml:"full_bin"`
 	ArgsBin          []string      `toml:"args_bin"`
@@ -127,7 +129,7 @@ func InitConfig(path string) (cfg *Config, err error) {
 	err = mergo.Merge(ret, cfg, func(config *mergo.Config) {
 		// mergo.Merge will overwrite the fields if it is Empty
 		// So need use this to avoid that none-zero slice will be overwritten.
-		// https://github.com/imdario/mergo#transformers
+		// https://dario.cat/mergo#transformers
 		config.Transformers = sliceTransformer{}
 		config.Overwrite = true
 	})
@@ -139,39 +141,37 @@ func InitConfig(path string) (cfg *Config, err error) {
 	return ret, err
 }
 
-func writeDefaultConfig() {
+func writeDefaultConfig() (string, error) {
 	confFiles := []string{dftTOML, dftConf}
 
 	for _, fname := range confFiles {
 		fstat, err := os.Stat(fname)
 		if err != nil && !os.IsNotExist(err) {
-			log.Fatal("failed to check for existing configuration")
-			return
+			return "", fmt.Errorf("failed to check for existing configuration: %w", err)
 		}
 		if err == nil && fstat != nil {
-			log.Fatal("configuration already exists")
-			return
+			return "", errors.New("configuration already exists")
 		}
 	}
 
 	file, err := os.Create(dftTOML)
 	if err != nil {
-		log.Fatalf("failed to create a new configuration: %+v", err)
+		return "", fmt.Errorf("failed to create a new configuration: %w", err)
 	}
 	defer file.Close()
 
 	config := defaultConfig()
 	configFile, err := toml.Marshal(config)
 	if err != nil {
-		log.Fatalf("failed to marshal the default configuration: %+v", err)
+		return "", fmt.Errorf("failed to marshal the default configuration: %w", err)
 	}
 
 	_, err = file.Write(configFile)
 	if err != nil {
-		log.Fatalf("failed to write to %s: %+v", dftTOML, err)
+		return "", fmt.Errorf("failed to write to %s: %w", dftTOML, err)
 	}
 
-	fmt.Printf("%s file created to the current directory with the default settings\n", dftTOML)
+	return dftTOML, nil
 }
 
 func defaultPathConfig() (*Config, error) {
@@ -212,12 +212,14 @@ func defaultConfig() Config {
 		Log:          "build-errors.log",
 		IncludeExt:   []string{"go", "tpl", "tmpl", "html"},
 		IncludeDir:   []string{},
+		PreCmd:       []string{},
+		PostCmd:      []string{},
 		ExcludeFile:  []string{},
 		IncludeFile:  []string{},
 		ExcludeDir:   []string{"assets", "tmp", "vendor", "testdata"},
 		ArgsBin:      []string{},
 		ExcludeRegex: []string{"_test.go"},
-		Delay:        0,
+		Delay:        1000,
 		Rerun:        false,
 		RerunDelay:   500,
 	}
@@ -287,6 +289,9 @@ func (c *Config) preprocess() error {
 		c.Root = cwd
 	}
 	c.Root, err = expandPath(c.Root)
+	if err != nil {
+		return err
+	}
 	if c.TmpDir == "" {
 		c.TmpDir = "tmp"
 	}
